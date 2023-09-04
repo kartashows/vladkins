@@ -1,0 +1,6 @@
+python-dotenv
+aiogram
+psycopg2-binary
+apscheduler
+pytz
+timezonefinder
