@@ -1,11 +1,13 @@
 import os
 import logging
+from datetime import datetime
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.dispatcher.filters.state import StatesGroup, State
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from dotenv import load_dotenv
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot_logic.utils import (default_keyboard,
                              get_select_medicines_keyboard,
@@ -21,12 +23,10 @@ from db.database import (add_user,
                          delete_medicine,
                          get_user_timezone,
                          get_medicine_jobs,
-                         get_interval_jobs)
+                         get_interval_job,
+                         delete_interval_job,
+                         add_interval_job)
 from db.connection_pool import get_connection
-
-##
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from datetime import datetime
 
 
 logging.basicConfig(level=logging.INFO)
@@ -43,8 +43,8 @@ if scheduler.running:
 else:
     scheduler.start()
 
+
 class Setup(StatesGroup):
-    Language = State()
     Location = State()
 
 
@@ -64,7 +64,6 @@ async def start(message: types.Message):
     await Setup.Location.set()
 
 
-
 @dp.message_handler(content_types=[types.ContentType.LOCATION], state=Setup.Location)
 async def create_user_execute(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
@@ -77,7 +76,7 @@ async def create_user_execute(message: types.Message, state: FSMContext):
         await state.finish()
 
 
-@dp.message_handler(lambda message: message.text == 'Add medicine')
+@dp.message_handler(lambda message: message.text == utils.default_add_button)
 async def add_medicine_prompt(message: types.Message):
     await message.answer(utils.MEDICINE_NAME_PROMPT)
     await Add.AddMedicineName.set()
@@ -125,7 +124,7 @@ async def add_medicine_time_prompt_and_execute(message: types.Message, state: FS
                     chat_id = message.chat.id
                     for time in medicine_data['scheduled_time']:
                         hours, minutes, date = get_utc_hours_minutes_date(time, timezone)
-                        job = scheduler.add_job(utils.send_message_cron,
+                        job = scheduler.add_job(utils.set_reminder_cron,
                                                 trigger='cron',
                                                 hour=hours,
                                                 minute=minutes,
@@ -147,30 +146,30 @@ async def add_medicine_time_prompt_and_execute(message: types.Message, state: FS
             await state.finish()
 
 
-@dp.message_handler(lambda message: message.text == 'List my medicines')
+@dp.message_handler(lambda message: message.text == utils.default_list_button)
 async def list_user_medicine_execute(message: types.Message):
     with get_connection() as connection:
         medicines = list_all_medicines(connection, message.from_user.id)
-        if medicines == []:
+        if not medicines:
             await message.answer(utils.MEDICINE_NAMES_EMPTY, reply_markup=default_keyboard)
         else:
             medicines_scheduled = """"""
             for medicine in medicines:
-                medicines_scheduled += f"*{medicine[0]}* with schedule: *{medicine[1]}*\n"
+                medicines_scheduled += utils.MEDICINE_NAME_WITH_SCHEDULE.format(medicine[0], medicine[1])
             await message.answer(medicines_scheduled,
                                  reply_markup=default_keyboard,
                                  parse_mode=types.ParseMode.MARKDOWN)
 
 
-@dp.message_handler(lambda message: message.text == 'Delete medicine')
-async def delete_medicine_prompt(message: types.Message):
+@dp.message_handler(lambda message: message.text == utils.default_delete_button)
+async def delete_user_medicine_prompt(message: types.Message):
     with get_connection() as connection:
         medicines = list_all_medicines(connection, message.from_user.id)
         medicine_names = [medicine[0] for medicine in medicines]
-        if medicine_names == []:
+        if not medicine_names:
             await message.answer(utils.MEDICINE_NAMES_EMPTY)
         else:
-            await message.answer(text='Please, select the medicine you want to delete.',
+            await message.answer(text=utils.MEDICINE_NAME_DELETE_PROMPT,
                                  reply_markup=get_select_medicines_keyboard(medicine_names))
             await Delete.DeleteMedicine.set()
 
@@ -192,23 +191,24 @@ async def delete_user_medicine_execute(message: types.Message, state: FSMContext
 async def process_reminder_callback_buttons(query: types.CallbackQuery):
     button_pressed = query.data
     if 'done' in button_pressed:
-        with get_connection() as connection:
-            user_id, medicine_name = button_pressed.split('_')[-2:]
-            date = datetime.now().strftime("%H:%M %Y-%m-%d")
-            add_intake(connection, medicine_name, user_id, date, status='done')
-            job_ids = get_interval_jobs(connection, medicine_name, user_id)
-            for job_id in job_ids:
-                scheduler.remove_job(job_id)
-            await query.answer("Recorded!")
-    elif 'skip' in button_pressed:
-        with get_connection() as connection:
-            user_id, medicine_name = button_pressed.split('_')[-2:]
-            date = datetime.now().strftime("%H:%M %Y-%m-%d")
-            add_intake(connection, medicine_name, user_id, date, status='skipped')
-            job_ids = get_interval_jobs(connection, medicine_name, user_id)
-            for job_id in job_ids:
-                scheduler.remove_job(job_id)
-            await query.answer("Skipped successfully!")
+        status = 'done'
+        response = 'Записано успешно!'
+    else:
+        status = 'skipped'
+        response = 'Пропущенно успешно!'
+    with get_connection() as connection:
+        user_id, medicine_name = button_pressed.split('_')[-2:]
+        date = datetime.now().strftime("%H:%M %Y-%m-%d")
+        add_intake(connection, medicine_name, user_id, date, status=status)
+        job_id = get_interval_job(connection, medicine_name, user_id)
+        scheduler.remove_job(str(job_id[0]))
+        delete_interval_job(connection, medicine_name, user_id)
+        await query.answer(response)
     await reminder_bot.edit_message_reply_markup(chat_id=query.message.chat.id,
                                                  message_id=query.message.message_id,
                                                  reply_markup=None)
+    await reminder_bot.edit_message_text(
+        chat_id=query.message.chat.id,
+        message_id=query.message.message_id,
+        text=f"{medicine_name} принято!",
+    )
