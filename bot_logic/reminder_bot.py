@@ -1,6 +1,7 @@
 import os
 import logging
 from datetime import datetime
+import re
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.dispatcher.filters.state import StatesGroup, State
@@ -15,7 +16,6 @@ from bot_logic.utils import (default_keyboard,
                              get_timezone,
                              get_utc_hours_minutes_date)
 import bot_logic.utils as utils
-from bot_logic.user_input_middleware import UserInputMiddleware
 from db.database import (add_user,
                          add_medicine,
                          add_medicine_job,
@@ -25,8 +25,7 @@ from db.database import (add_user,
                          get_user_timezone,
                          get_medicine_jobs,
                          get_interval_job,
-                         delete_interval_job,
-                         add_interval_job)
+                         delete_interval_job)
 from db.connection_pool import get_connection
 
 
@@ -38,7 +37,6 @@ TOKEN = os.environ['TOKEN']
 
 reminder_bot = Bot(token=TOKEN)
 dp = Dispatcher(reminder_bot, storage=MemoryStorage())
-dp.middleware.setup(UserInputMiddleware())
 scheduler = AsyncIOScheduler(timezone=os.environ['SYSTEM_TIMEZONE'])
 if scheduler.running:
     scheduler.shutdown()
@@ -66,8 +64,12 @@ async def start(message: types.Message):
     await Setup.Location.set()
 
 
-@dp.message_handler(content_types=[types.ContentType.LOCATION], state=Setup.Location)
+@dp.message_handler(content_types=[types.ContentType.LOCATION, types.ContentType.TEXT], state=Setup.Location)
 async def create_user_execute(message: types.Message, state: FSMContext):
+    if message.location is None:
+        await message.reply(utils.USER_INPUT_LOCATION_CHECK, reply_markup=get_location_button())
+        await Setup.Location.set()
+        return
     user_id = message.from_user.id
     timezone = get_timezone(longitude=message.location.longitude, latitude=message.location.latitude)
     with get_connection() as connection:
@@ -96,8 +98,9 @@ async def add_medicine_name_prompt(message: types.Message, state: FSMContext):
 @dp.message_handler(state=Add.AddMedicineDailyIntakeTimes)
 async def add_medicine_daily_intake_prompt(message: types.Message, state: FSMContext):
     if not message.text.isdigit() or (int(message.text) < 1 or int(message.text) > 10):
-        await message.answer('Please, enter a digit from 1 to 10.')
+        await message.answer(utils.USER_INPUT_DAILY_INTAKES_CHECK)
         await Add.AddMedicineDailyIntakeTimes.set()
+        return
     times = int(message.text)
     async with state.proxy() as medicine_data:
         medicine_data['times'] = times
@@ -109,6 +112,10 @@ async def add_medicine_daily_intake_prompt(message: types.Message, state: FSMCon
 
 @dp.message_handler(state=Add.AddMedicineTime)
 async def add_medicine_time_prompt_and_execute(message: types.Message, state: FSMContext):
+    if not bool(re.match(r'^\d\d:\d\d$', message.text)):
+        await message.reply(utils.USER_INPUT_SCHEDULE_TIME_CHECK)
+        await Add.AddMedicineTime.set()
+        return
     async with state.proxy() as medicine_data:
         medicine_data['scheduled_time'].append(message.text)
         medicine_data['times_prompt_counter'] -= 1

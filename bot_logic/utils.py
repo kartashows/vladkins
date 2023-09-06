@@ -39,9 +39,12 @@ CALLBACK_RESPONSE_SKIPPED = "Пропущенно успешно!"
 REMINDER_TEXT = "Время принимать {}! {}"
 REMINDER_TEXT_UPDATE = "{} принято!"
 USER_INPUT_STATELESS = 'Пожалуйста, используй предложенные команды: "Добавить", "Показать мои лекарства" или "Удалить лекарство"'
+USER_INPUT_LOCATION_CHECK = "Пожалуйста, отправь мне свой часовой пояс, нажав на предложенную кнопку."
+USER_INPUT_MEDICINE_NAME_CHECK = "{} не похоже на название лекарства...\n Отправь ещё раз полное название!"
+USER_INPUT_DAILY_INTAKES_CHECK = "Пожалуста, введи число от 1 до 10."
+USER_INPUT_SCHEDULE_TIME_CHECK = "Пожалуйста, введи время в формате 00:00."
 
 
-# reminder actions
 def get_remind_keyboard(user_id: str, medicine_name: str) -> InlineKeyboardMarkup:
     done = InlineKeyboardButton("Done!", callback_data=f'button_done_{user_id}_{medicine_name}')
     skip = InlineKeyboardButton("Skip!", callback_data=f'button_skip_{user_id}_{medicine_name}')
