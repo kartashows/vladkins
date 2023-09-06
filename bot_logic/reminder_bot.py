@@ -179,12 +179,16 @@ async def delete_user_medicine_prompt(message: types.Message):
             await message.answer(utils.MEDICINE_NAMES_EMPTY)
         else:
             await message.answer(text=utils.MEDICINE_NAME_DELETE_PROMPT,
-                                 reply_markup=get_select_medicines_keyboard(medicine_names))
+                                 reply_markup=get_select_medicines_keyboard(medicine_names + ['Отменить']))
             await Delete.DeleteMedicine.set()
 
 
 @dp.message_handler(state=Delete.DeleteMedicine)
 async def delete_user_medicine_execute(message: types.Message, state: FSMContext):
+    if message.text == 'Отменить':
+        await message.answer(utils.MEDICINE_DELETE_CANCEL, reply_markup=default_keyboard)
+        await state.finish()
+        return
     medicine_name = message.text
     user_id = str(message.from_user.id)
     with get_connection() as connection:
