@@ -2,7 +2,7 @@ import logging
 
 from aiogram.utils import executor
 
-from bot_logic.bot import dp
+from bot_logic.reminder_bot import dp
 from db.connection_pool import get_connection
 import db.database as database
 
@@ -20,11 +20,12 @@ def main():
         logger.info("Starting Vladking bot...")
         executor.start_polling(dp, skip_updates=True)
     finally:
-        #debug mode
+        # debug mode
         with get_connection() as connection:
             logger.info("Deleting tables!")
             database.delete_tables(connection)
         logger.info("Stopping Vladkins bot...")
+
 
 if __name__ == '__main__':
     main()

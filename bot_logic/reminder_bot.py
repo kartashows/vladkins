@@ -15,6 +15,7 @@ from bot_logic.utils import (default_keyboard,
                              get_timezone,
                              get_utc_hours_minutes_date)
 import bot_logic.utils as utils
+from bot_logic.user_input_middleware import UserInputMiddleware
 from db.database import (add_user,
                          add_medicine,
                          add_medicine_job,
@@ -37,6 +38,7 @@ TOKEN = os.environ['TOKEN']
 
 reminder_bot = Bot(token=TOKEN)
 dp = Dispatcher(reminder_bot, storage=MemoryStorage())
+dp.middleware.setup(UserInputMiddleware())
 scheduler = AsyncIOScheduler(timezone=os.environ['SYSTEM_TIMEZONE'])
 if scheduler.running:
     scheduler.shutdown()
@@ -192,10 +194,10 @@ async def process_reminder_callback_buttons(query: types.CallbackQuery):
     button_pressed = query.data
     if 'done' in button_pressed:
         status = 'done'
-        response = 'Записано успешно!'
+        response = utils.CALLBACK_RESPONSE_DONE
     else:
         status = 'skipped'
-        response = 'Пропущенно успешно!'
+        response = utils.CALLBACK_RESPONSE_SKIPPED
     with get_connection() as connection:
         user_id, medicine_name = button_pressed.split('_')[-2:]
         date = datetime.now().strftime("%H:%M %Y-%m-%d")
@@ -210,5 +212,5 @@ async def process_reminder_callback_buttons(query: types.CallbackQuery):
     await reminder_bot.edit_message_text(
         chat_id=query.message.chat.id,
         message_id=query.message.message_id,
-        text=f"{medicine_name} принято!",
+        text=utils.REMINDER_TEXT_UPDATE.format(medicine_name),
     )

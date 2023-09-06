@@ -36,6 +36,7 @@ medicine_name TEXT,
 date TEXT,
 status TEXT
 );"""
+
 ADD_USER = "INSERT INTO users (user_tg_id, timezone) VALUES(%s, %s) ON CONFLICT (user_tg_id) DO NOTHING;"
 ADD_MEDICINE = """INSERT INTO medicines (medicine_name, user_id, schedule)
 VALUES(%s, %s, %s)
@@ -44,11 +45,15 @@ RETURNING medicine_name;"""
 ADD_JOB = """INSERT INTO jobs (medicine_name, user_id, job_id) VALUES(%s, %s, %s);"""
 ADD_INTERVAL_JOB = """INSERT INTO interval_jobs (medicine_name, user_id, job_id) VALUES(%s, %s, %s);"""
 ADD_INTAKE = """INSERT INTO intakes (user_id, medicine_name, date, status) VALUES(%s, %s, %s, %s);"""
-GET_JOB_IDS = """SELECT interval_jobs.job_id FROM jobs WHERE medicine_name = %s AND user_id = %s;"""
-GET_INTERVAL_JOB_IDS = """SELECT jobs.job_id FROM interval_jobs WHERE medicine_name = %s AND user_id = %s;"""
+
+GET_JOB_IDS = """SELECT jobs.job_id FROM jobs WHERE medicine_name = %s AND user_id = %s;"""
+GET_INTERVAL_JOB_ID = """SELECT interval_jobs.job_id FROM interval_jobs WHERE medicine_name = %s AND user_id = %s;"""
+
 LIST_ALL_MEDICINE = """SELECT medicine_name, schedule FROM medicines where user_id = %s::TEXT;"""
+
 DELETE_MEDICINE = """DELETE FROM medicines WHERE medicine_name = %s AND user_id = %s::TEXT"""
 DELETE_MEDICINE_JOBS = """DELETE FROM jobs WHERE medicine_name = %s AND user_id = %s::TEXT"""
+DELETE_INTERVAL_JOB = """DELETE FROM interval_jobs WHERE medicine_name = %s AND user_id = %s::TEXT"""
 GET_TIMEZONE = """SELECT users.timezone FROM users WHERE user_tg_id = %s::TEXT"""
 
 
@@ -90,7 +95,7 @@ def add_medicine_job(connection, medicine_name: str, user_id: str, job_id: str):
 
 def add_interval_job(connection, medicine_name: str, user_id: str, job_id: str):
     with get_cursor(connection) as cursor:
-        cursor.execute(ADD_JOB, (medicine_name, user_id, job_id))
+        cursor.execute(ADD_INTERVAL_JOB, (medicine_name, user_id, job_id))
 
 
 def add_intake(connection, medicine_name: str, user_id: str, date: str, status: str):
@@ -116,6 +121,7 @@ def delete_tables(connection):
         cursor.execute('DROP TABLE users;')
         cursor.execute('DROP TABLE jobs;')
         cursor.execute('DROP TABLE intakes;')
+        cursor.execute('DROP TABLE interval_jobs;')
 
 
 def get_user_timezone(connection, user_id) -> str:
@@ -130,9 +136,13 @@ def get_medicine_jobs(connection, medicine_name: str, user_id: str) -> List[str]
         return [row[0] for row in cursor.fetchall()]
 
 
-def get_interval_jobs(connection, medicine_name: str, user_id: str) -> List[str]:
+def get_interval_job(connection, medicine_name: str, user_id: str) -> str:
     with get_cursor(connection) as cursor:
-        cursor.execute(GET_INTERVAL_JOB_IDS, (medicine_name, user_id))
-        return [row[0] for row in cursor.fetchall()]
+        cursor.execute(GET_INTERVAL_JOB_ID, (medicine_name, user_id))
+        job_id = cursor.fetchall()
+        return job_id[0]
 
 
+def delete_interval_job(connection, medicine_name: str, user_id: str):
+    with get_cursor(connection) as cursor:
+        cursor.execute(DELETE_INTERVAL_JOB, (medicine_name, user_id))
