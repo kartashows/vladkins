@@ -89,6 +89,10 @@ async def add_medicine_prompt(message: types.Message):
 @dp.message_handler(state=Add.AddMedicineName)
 async def add_medicine_name_prompt(message: types.Message, state: FSMContext):
     medicine_name = message.text
+    if medicine_name == utils.default_add_button:
+        await message.reply(utils.MEDICINE_NAME_MULTIPLE_BUTTON_PRESS)
+        await Add.AddMedicineName.set()
+        return
     async with state.proxy() as medicine_data:
         medicine_data['name'] = medicine_name
     await message.answer(utils.MEDICINE_INTAKE_TIMES_PROMPT)
@@ -198,6 +202,11 @@ async def delete_user_medicine_execute(message: types.Message, state: FSMContext
         delete_medicine(connection, medicine_name, user_id)
         await message.answer(utils.MEDICINE_DELETE_SUCCESS.format(medicine_name), reply_markup=default_keyboard)
         await state.finish()
+
+
+@dp.message_handler(lambda message: message.text == utils.default_see_intakes_button)
+async def share_intakes_history(message: types.Message):
+    await message.answer('В разработке')
 
 
 @dp.callback_query_handler(lambda query: query.data.startswith('button'))
