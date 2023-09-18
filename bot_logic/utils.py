@@ -10,19 +10,28 @@ from timezonefinder import TimezoneFinder
 import pytz
 
 from db.connection_pool import get_connection
-from db.database import add_interval_job
+from db.database import add_interval_job, get_user_intakes
 
+
+# buttons
+DEFAULT_ADD_BUTTON = "Добавить"
+DEFAULT_LIST_BUTTON = "Показать мои лекарства"
+DEFAULT_DELETE_BUTTON = "Удалить лекарство"
+DEFAULT_SEE_INTAKES_BUTTON = "Моя история лекарств"
 
 # emojis
 waving_hand = '\U0001F44B'
 doctor = '\U0001F468'
 savouring_face = '\U0001F60B'
 globe = '\U0001F30D'
+party_face = '\U0001F973'
 
+# texts
 WELCOME_MESSAGE = f"""Привет! {waving_hand}\n
 Меня зовут доктор Владкинс. {doctor}\n
 Для начала давай определимся с твоим часовым поясом {globe}\n
 Вместо твоей клавиатуры сейчас появилась кнопка "Поделиться часовым поясом" - нажми её!"""
+USER_ALREADY_EXISTS = f"Ты уже есть в моей базе! {party_face}"
 TIMEZONE_SUCCESS = "Отлично! Ваш часовой пояс - *{}*."
 MEDICINE_NAME_PROMPT = "Пожалуйста, введи название лекарства."
 MEDICINE_NAME_MULTIPLE_BUTTON_PRESS = 'Достаточно один раз нажать на кнопку! Введи название препарата.'
@@ -39,7 +48,7 @@ MEDICINE_NAME_WITH_SCHEDULE = "*{}* со следующим расписание
 CALLBACK_RESPONSE_DONE = "Записано успешно!"
 CALLBACK_RESPONSE_SKIPPED = "Пропущенно успешно!"
 REMINDER_TEXT = "Время принимать {}! {}"
-REMINDER_TEXT_UPDATE = "{} принято!"
+REMINDER_TEXT_UPDATE = "{} {}!"
 USER_INPUT_STATELESS = 'Пожалуйста, используй предложенные команды: \
 "Добавить", "Показать мои лекарства" или "Удалить лекарство"'
 USER_INPUT_LOCATION_CHECK = "Пожалуйста, отправь мне свой часовой пояс, нажав на предложенную кнопку."
@@ -55,20 +64,11 @@ def get_remind_keyboard(user_id: str, medicine_name: str) -> InlineKeyboardMarku
     return remind_keyboard
 
 
-# default menu
-default_add_button = "Добавить"
-default_list_button = "Показать мои лекарства"
-default_delete_button = "Удалить лекарство"
-default_see_intakes_button = "Моя история лекарств"
-default_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-default_keyboard.row(default_add_button)
-default_keyboard.row(default_list_button, default_delete_button, default_see_intakes_button)
-
-
-# for timezone selection
-select_tz_keyboard = ReplyKeyboardMarkup(row_width=1)
-timezone_buttons = [InlineKeyboardButton(text=f'Timezone {i}') for i in range(20)]
-select_tz_keyboard.add(*timezone_buttons)
+def get_default_keyboard():
+    default_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+    default_keyboard.row(DEFAULT_ADD_BUTTON)
+    default_keyboard.row(DEFAULT_LIST_BUTTON, DEFAULT_DELETE_BUTTON, DEFAULT_SEE_INTAKES_BUTTON)
+    return default_keyboard
 
 
 # tz
@@ -126,3 +126,8 @@ def set_reminder_cron(bot: Bot, chat_id: int, medicine_name: str, user_id: str):
 async def send_reminder(bot: Bot, chat_id: int, medicine_name: str, user_id: str):
     text = REMINDER_TEXT.format(medicine_name, savouring_face)
     await bot.send_message(chat_id, text, reply_markup=get_remind_keyboard(user_id, medicine_name))
+
+
+def get_intake_history_csv(user_id: str):
+    with get_connection() as connection:
+        return get_user_intakes(connection, user_id)

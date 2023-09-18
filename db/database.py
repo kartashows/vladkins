@@ -48,13 +48,14 @@ ADD_INTAKE = """INSERT INTO intakes (user_id, medicine_name, date, status) VALUE
 
 GET_JOB_IDS = """SELECT jobs.job_id FROM jobs WHERE medicine_name = %s AND user_id = %s;"""
 GET_INTERVAL_JOB_ID = """SELECT interval_jobs.job_id FROM interval_jobs WHERE medicine_name = %s AND user_id = %s;"""
+GET_TIMEZONE = """SELECT users.timezone FROM users WHERE user_tg_id = %s::TEXT"""
+GET_USER_INTAKES = """SELECT medicine_name, date, status FROM intakes WHERE user_id = %s::TEXT"""
 
 LIST_ALL_MEDICINE = """SELECT medicine_name, schedule FROM medicines where user_id = %s::TEXT;"""
 
 DELETE_MEDICINE = """DELETE FROM medicines WHERE medicine_name = %s AND user_id = %s::TEXT"""
 DELETE_MEDICINE_JOBS = """DELETE FROM jobs WHERE medicine_name = %s AND user_id = %s::TEXT"""
 DELETE_INTERVAL_JOB = """DELETE FROM interval_jobs WHERE medicine_name = %s AND user_id = %s::TEXT"""
-GET_TIMEZONE = """SELECT users.timezone FROM users WHERE user_tg_id = %s::TEXT"""
 
 
 @contextmanager
@@ -76,6 +77,10 @@ def create_tables(connection):
 def add_user(connection, user_id: str,  timezone: str = 'NA'):
     with get_cursor(connection) as cursor:
         cursor.execute(ADD_USER, (user_id, timezone))
+
+
+def check_user_exists(connection, user_id: str) -> bool:
+    return True
 
 
 def add_medicine(connection, medicine_name: str, user_id: str, schedule: str) -> str:
@@ -146,3 +151,9 @@ def get_interval_job(connection, medicine_name: str, user_id: str) -> str:
 def delete_interval_job(connection, medicine_name: str, user_id: str):
     with get_cursor(connection) as cursor:
         cursor.execute(DELETE_INTERVAL_JOB, (medicine_name, user_id))
+
+
+def get_user_intakes(connection, user_id: str):
+    with get_cursor(connection) as cursor:
+        cursor.execute(GET_USER_INTAKES, (user_id,))
+        return cursor.fetchall()

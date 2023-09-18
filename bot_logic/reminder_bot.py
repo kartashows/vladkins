@@ -10,13 +10,14 @@ from aiogram.dispatcher import FSMContext
 from dotenv import load_dotenv
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from bot_logic.utils import (default_keyboard,
+from bot_logic.utils import (get_default_keyboard,
                              get_select_medicines_keyboard,
                              get_location_button,
                              get_timezone,
                              get_utc_hours_minutes_date)
 import bot_logic.utils as utils
 from db.database import (add_user,
+                         check_user_exists,
                          add_medicine,
                          add_medicine_job,
                          add_intake,
@@ -60,6 +61,10 @@ class Delete(StatesGroup):
 
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
+    with get_connection() as connection:
+        if check_user_exists(connection, message.from_user.id):
+            await message.answer(utils.USER_ALREADY_EXISTS, reply_markup=get_default_keyboard())
+            return
     await message.answer(utils.WELCOME_MESSAGE, reply_markup=get_location_button())
     await Setup.Location.set()
 
@@ -75,12 +80,12 @@ async def create_user_execute(message: types.Message, state: FSMContext):
     with get_connection() as connection:
         add_user(connection, user_id, timezone)
         await message.answer(utils.TIMEZONE_SUCCESS.format(timezone),
-                             reply_markup=default_keyboard,
+                             reply_markup=get_default_keyboard(),
                              parse_mode=types.ParseMode.MARKDOWN)
         await state.finish()
 
 
-@dp.message_handler(lambda message: message.text == utils.default_add_button)
+@dp.message_handler(lambda message: message.text == utils.DEFAULT_ADD_BUTTON)
 async def add_medicine_prompt(message: types.Message):
     await message.answer(utils.MEDICINE_NAME_PROMPT)
     await Add.AddMedicineName.set()
@@ -89,7 +94,7 @@ async def add_medicine_prompt(message: types.Message):
 @dp.message_handler(state=Add.AddMedicineName)
 async def add_medicine_name_prompt(message: types.Message, state: FSMContext):
     medicine_name = message.text
-    if medicine_name == utils.default_add_button:
+    if medicine_name == utils.DEFAULT_ADD_BUTTON:
         await message.reply(utils.MEDICINE_NAME_MULTIPLE_BUTTON_PRESS)
         await Add.AddMedicineName.set()
         return
@@ -150,31 +155,31 @@ async def add_medicine_time_prompt_and_execute(message: types.Message, state: FS
                         add_medicine_job(connection, medicine_data['name'], user_id, job.id)
                     await message.answer(
                         utils.MEDICINE_TOTAL_INFO.format(medicine_data['name'], medicine_data['scheduled_time']),
-                        reply_markup=default_keyboard,
+                        reply_markup=get_default_keyboard(),
                         parse_mode=types.ParseMode.MARKDOWN)
                 else:
                     await message.answer(utils.MEDICINE_INSERTION_FAIL.format(medicine_data['name']),
-                                         reply_markup=default_keyboard)
+                                         reply_markup=get_default_keyboard())
 
             await state.finish()
 
 
-@dp.message_handler(lambda message: message.text == utils.default_list_button)
+@dp.message_handler(lambda message: message.text == utils.DEFAULT_LIST_BUTTON)
 async def list_user_medicine_execute(message: types.Message):
     with get_connection() as connection:
         medicines = list_all_medicines(connection, message.from_user.id)
         if not medicines:
-            await message.answer(utils.MEDICINE_NAMES_EMPTY, reply_markup=default_keyboard)
+            await message.answer(utils.MEDICINE_NAMES_EMPTY, reply_markup=get_default_keyboard())
         else:
             medicines_scheduled = """"""
             for medicine in medicines:
                 medicines_scheduled += utils.MEDICINE_NAME_WITH_SCHEDULE.format(medicine[0], medicine[1])
             await message.answer(medicines_scheduled,
-                                 reply_markup=default_keyboard,
+                                 reply_markup=get_default_keyboard(),
                                  parse_mode=types.ParseMode.MARKDOWN)
 
 
-@dp.message_handler(lambda message: message.text == utils.default_delete_button)
+@dp.message_handler(lambda message: message.text == utils.DEFAULT_DELETE_BUTTON)
 async def delete_user_medicine_prompt(message: types.Message):
     with get_connection() as connection:
         medicines = list_all_medicines(connection, message.from_user.id)
@@ -190,7 +195,7 @@ async def delete_user_medicine_prompt(message: types.Message):
 @dp.message_handler(state=Delete.DeleteMedicine)
 async def delete_user_medicine_execute(message: types.Message, state: FSMContext):
     if message.text == 'Отменить':
-        await message.answer(utils.MEDICINE_DELETE_CANCEL, reply_markup=default_keyboard)
+        await message.answer(utils.MEDICINE_DELETE_CANCEL, reply_markup=get_default_keyboard())
         await state.finish()
         return
     medicine_name = message.text
@@ -200,12 +205,13 @@ async def delete_user_medicine_execute(message: types.Message, state: FSMContext
         for job_id in job_ids:
             scheduler.remove_job(job_id)
         delete_medicine(connection, medicine_name, user_id)
-        await message.answer(utils.MEDICINE_DELETE_SUCCESS.format(medicine_name), reply_markup=default_keyboard)
+        await message.answer(utils.MEDICINE_DELETE_SUCCESS.format(medicine_name), reply_markup=get_default_keyboard())
         await state.finish()
 
 
-@dp.message_handler(lambda message: message.text == utils.default_see_intakes_button)
+@dp.message_handler(lambda message: message.text == utils.DEFAULT_SEE_INTAKES_BUTTON)
 async def share_intakes_history(message: types.Message):
+    print(utils.get_intake_history_csv(message.from_user.id))
     await message.answer('В разработке')
 
 
@@ -215,9 +221,11 @@ async def process_reminder_callback_buttons(query: types.CallbackQuery):
     if 'done' in button_pressed:
         status = 'done'
         response = utils.CALLBACK_RESPONSE_DONE
+        text_update = 'записано.'
     else:
         status = 'skipped'
         response = utils.CALLBACK_RESPONSE_SKIPPED
+        text_update = 'пропущено.'
     with get_connection() as connection:
         user_id, medicine_name = button_pressed.split('_')[-2:]
         date = datetime.now().strftime("%H:%M %Y-%m-%d")
@@ -232,5 +240,5 @@ async def process_reminder_callback_buttons(query: types.CallbackQuery):
     await reminder_bot.edit_message_text(
         chat_id=query.message.chat.id,
         message_id=query.message.message_id,
-        text=utils.REMINDER_TEXT_UPDATE.format(medicine_name),
+        text=utils.REMINDER_TEXT_UPDATE.format(medicine_name, text_update),
     )
