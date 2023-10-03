@@ -1,6 +1,7 @@
 from typing import List, Tuple
 
 from contextlib import contextmanager
+from psycopg2.extensions import AsIs
 
 CREATE_USERS_TABLE = """CREATE TABLE IF NOT EXISTS users
 (id SERIAL PRIMARY KEY,
@@ -10,6 +11,7 @@ CREATE_MEDICINES_TABLE = """CREATE TABLE IF NOT EXISTS medicines
 (id SERIAL PRIMARY KEY,
 medicine_name TEXT,
 user_id TEXT,
+chat_id TEXT,
 schedule TEXT,
 FOREIGN KEY(user_id) REFERENCES users(user_tg_id),
 UNIQUE(medicine_name, user_id));"""
@@ -38,8 +40,8 @@ status TEXT
 );"""
 
 ADD_USER = "INSERT INTO users (user_tg_id, timezone) VALUES(%s, %s) ON CONFLICT (user_tg_id) DO NOTHING;"
-ADD_MEDICINE = """INSERT INTO medicines (medicine_name, user_id, schedule)
-VALUES(%s, %s, %s)
+ADD_MEDICINE = """INSERT INTO medicines (medicine_name, user_id, chat_id, schedule)
+VALUES(%s, %s, %s, %s)
 ON CONFLICT (medicine_name, user_id) DO NOTHING
 RETURNING medicine_name;"""
 ADD_JOB = """INSERT INTO jobs (medicine_name, user_id, job_id) VALUES(%s, %s, %s);"""
@@ -48,14 +50,19 @@ ADD_INTAKE = """INSERT INTO intakes (user_id, medicine_name, date, status) VALUE
 
 GET_JOB_IDS = """SELECT jobs.job_id FROM jobs WHERE medicine_name = %s AND user_id = %s;"""
 GET_INTERVAL_JOB_ID = """SELECT interval_jobs.job_id FROM interval_jobs WHERE medicine_name = %s AND user_id = %s;"""
-GET_TIMEZONE = """SELECT users.timezone FROM users WHERE user_tg_id = %s::TEXT"""
-GET_USER_INTAKES = """SELECT medicine_name, date, status FROM intakes WHERE user_id = %s::TEXT"""
+GET_TIMEZONE = """SELECT users.timezone FROM users WHERE user_tg_id = %s::TEXT;"""
+GET_USER_INTAKES = """SELECT medicine_name, date, status FROM intakes WHERE user_id = %s::TEXT;"""
+GET_USER = "SELECT * FROM users WHERE user_tg_id = %s::TEXT;"
 
 LIST_ALL_MEDICINE = """SELECT medicine_name, schedule FROM medicines where user_id = %s::TEXT;"""
 
-DELETE_MEDICINE = """DELETE FROM medicines WHERE medicine_name = %s AND user_id = %s::TEXT"""
-DELETE_MEDICINE_JOBS = """DELETE FROM jobs WHERE medicine_name = %s AND user_id = %s::TEXT"""
-DELETE_INTERVAL_JOB = """DELETE FROM interval_jobs WHERE medicine_name = %s AND user_id = %s::TEXT"""
+DELETE_MEDICINE = """DELETE FROM medicines WHERE medicine_name = %s AND user_id = %s::TEXT;"""
+DELETE_MEDICINE_JOBS = """DELETE FROM jobs WHERE medicine_name = %s AND user_id = %s::TEXT;"""
+DELETE_INTERVAL_JOB = """DELETE FROM interval_jobs WHERE medicine_name = %s AND user_id = %s::TEXT;"""
+
+COUNT_ENTRIES = """SELECT COUNT(*) FROM %s;"""
+GET_TABLE_ROWS = """SELECT * FROM %s;"""
+CLEAR_TABLE = """DELETE FROM %s;"""
 
 
 @contextmanager
@@ -79,13 +86,9 @@ def add_user(connection, user_id: str,  timezone: str = 'NA'):
         cursor.execute(ADD_USER, (user_id, timezone))
 
 
-def check_user_exists(connection, user_id: str) -> bool:
-    return True
-
-
-def add_medicine(connection, medicine_name: str, user_id: str, schedule: str) -> str:
+def add_medicine(connection, medicine_name: str, user_id: str, chat_id: str, schedule: str) -> str:
     with get_cursor(connection) as cursor:
-        cursor.execute(ADD_MEDICINE, (medicine_name, user_id, schedule))
+        cursor.execute(ADD_MEDICINE, (medicine_name, user_id, chat_id, schedule))
         result = cursor.fetchone()
         if result is not None:
             return result[0]
@@ -157,3 +160,27 @@ def get_user_intakes(connection, user_id: str):
     with get_cursor(connection) as cursor:
         cursor.execute(GET_USER_INTAKES, (user_id,))
         return cursor.fetchall()
+
+
+def db_empty(connection, db: str) -> bool:
+    with get_cursor(connection) as cursor:
+        cursor.execute(COUNT_ENTRIES, (AsIs(db),))
+        count = cursor.fetchone()[0]
+        return count == 0
+
+
+def get_rows(connection, db: str) -> List[Tuple]:
+    with get_cursor(connection) as cursor:
+        cursor.execute(GET_TABLE_ROWS, (AsIs(db),))
+        return cursor.fetchall()
+
+
+def get_user(connection, user_id: str) -> List[Tuple]:
+    with get_cursor(connection) as cursor:
+        cursor.execute(GET_USER, (user_id,))
+        return cursor.fetchall()
+
+
+def clear_table(connection, db: str):
+    with get_cursor(connection) as cursor:
+        cursor.execute(CLEAR_TABLE, (AsIs(db),))

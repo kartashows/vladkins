@@ -17,7 +17,6 @@ from bot_logic.utils import (get_default_keyboard,
                              get_utc_hours_minutes_date)
 import bot_logic.utils as utils
 from db.database import (add_user,
-                         check_user_exists,
                          add_medicine,
                          add_medicine_job,
                          add_intake,
@@ -62,7 +61,7 @@ class Delete(StatesGroup):
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
     with get_connection() as connection:
-        if check_user_exists(connection, message.from_user.id):
+        if utils.check_user_exists(connection, message.from_user.id):
             await message.answer(utils.USER_ALREADY_EXISTS, reply_markup=get_default_keyboard())
             return
     await message.answer(utils.WELCOME_MESSAGE, reply_markup=get_location_button())
@@ -132,16 +131,17 @@ async def add_medicine_time_prompt_and_execute(message: types.Message, state: FS
             await message.answer(utils.MEDICINE_SCHEDULED_TIME_PROMPT)
         else:
             user_id = message.from_user.id
+            chat_id = message.chat.id
             with get_connection() as connection:
                 insertion_check = add_medicine(connection,
                                                medicine_data['name'],
                                                user_id,
+                                               chat_id,
                                                ','.join(medicine_data['scheduled_time']))
                 if insertion_check != '':
                     timezone = get_user_timezone(connection, user_id)
-                    chat_id = message.chat.id
                     for time in medicine_data['scheduled_time']:
-                        hours, minutes, date = get_utc_hours_minutes_date(time, timezone)
+                        hours, minutes, date = utils.get_utc_hours_minutes_date(time, timezone)
                         job = scheduler.add_job(utils.set_reminder_cron,
                                                 trigger='cron',
                                                 hour=hours,

@@ -10,11 +10,11 @@ from timezonefinder import TimezoneFinder
 import pytz
 
 from db.connection_pool import get_connection
-from db.database import add_interval_job, get_user_intakes
+from db.database import add_interval_job, get_user_intakes, db_empty, get_rows, clear_table, add_medicine_job, get_user, get_user_timezone
 
 
 # buttons
-DEFAULT_ADD_BUTTON = "Добавить"
+DEFAULT_ADD_BUTTON = "Добавить лекарство"
 DEFAULT_LIST_BUTTON = "Показать мои лекарства"
 DEFAULT_DELETE_BUTTON = "Удалить лекарство"
 DEFAULT_SEE_INTAKES_BUTTON = "Моя история лекарств"
@@ -131,3 +131,37 @@ async def send_reminder(bot: Bot, chat_id: int, medicine_name: str, user_id: str
 def get_intake_history_csv(user_id: str):
     with get_connection() as connection:
         return get_user_intakes(connection, user_id)
+
+
+def check_user_exists(connection, user_id: str) -> bool:
+    return len(get_user(connection, user_id)) > 0
+
+
+def resume_scheduled_jobs(connection, bot: Bot, logger):
+    # if jobs table not empty -> clear the table -> rescheduler all jobs and add to the jobs table
+    from bot_logic.reminder_bot import scheduler
+
+    if db_empty(connection, "jobs"):
+        logger.info("No jobs to resume!")
+        return 1
+    clear_table(connection, "jobs")
+    medicines = get_rows(connection, 'medicines')
+    for medicine in medicines:
+        medicine_name = medicine[1]
+        user_id = medicine[2]
+        chat_id = medicine[3]
+        schedule = medicine[4].split(',')
+        timezone = get_user_timezone(connection, user_id)
+        for time in schedule:
+            hours, minutes, date = get_utc_hours_minutes_date(time, timezone)
+            job = scheduler.add_job(set_reminder_cron,
+                                    trigger='cron',
+                                    hour=hours,
+                                    minute=minutes,
+                                    start_date=date,
+                                    kwargs={'bot': bot,
+                                            'chat_id': chat_id,
+                                            'user_id': user_id,
+                                            'medicine_name': medicine_name})
+            logger.info(f"Scheduled {job.id} job for {job.next_run_time}!")
+            add_medicine_job(connection, medicine_name, user_id, job.id)
