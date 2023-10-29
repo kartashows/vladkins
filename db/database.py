@@ -57,6 +57,8 @@ DELETE_MEDICINE = """DELETE FROM medicines WHERE medicine_name = %s AND user_id 
 DELETE_MEDICINE_JOBS = """DELETE FROM jobs WHERE medicine_name = %s AND user_id = %s::TEXT"""
 DELETE_INTERVAL_JOB = """DELETE FROM interval_jobs WHERE medicine_name = %s AND user_id = %s::TEXT"""
 
+CHECK_USER = "SELECT EXISTS (SELECT 1 FROM users WHERE user_tg_id = %s);"
+
 
 @contextmanager
 def get_cursor(connection):
@@ -80,7 +82,14 @@ def add_user(connection, user_id: str,  timezone: str = 'NA'):
 
 
 def check_user_exists(connection, user_id: str) -> bool:
-    return True
+    with get_cursor(connection) as cursor:
+        try:
+            cursor.execute(CHECK_USER, (user_id,))
+            return True
+        except:
+            return False
+
+
 
 
 def add_medicine(connection, medicine_name: str, user_id: str, schedule: str) -> str:

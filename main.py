@@ -20,10 +20,11 @@ def main():
         logger.info("Starting Vladking bot...")
         executor.start_polling(dp, skip_updates=True)
     finally:
-        # debug mode
+        # debug mode ==========================
         with get_connection() as connection:
             logger.info("Deleting tables!")
             database.delete_tables(connection)
+        # =====================================
         logger.info("Stopping Vladkins bot...")
 
 
